@@ -11,5 +11,9 @@ obj/
 **/*.tar.gz
 DockerWithNoOtherDependencies/**/*.zip
 DockerWithNoOtherDependencies/**/images/
-RateGate-Docker-Offline-Bundle-*.zip
-
+/data/*.db
+/data/*.db-wal
+/data/*.db-shm
+/src/ImportForge.Api/data/*.db
+/src/ImportForge.Api/data/*.db-wal
+/src/ImportForge.Api/data/*.db-shm
