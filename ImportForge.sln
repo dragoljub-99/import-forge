@@ -7,6 +7,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{E01D1105-339
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImportForge.Api", "src\ImportForge.Api\ImportForge.Api.csproj", "{F2E1C694-0D33-47DF-A0B8-483D02BF8075}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImportForge.Infrastructure", "src\ImportForge.Infrastructure\ImportForge.Infrastructure.csproj", "{A1CA0357-70CD-4540-8BBC-4911CA296A43}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ImportForge.Domain", "src\ImportForge.Domain\ImportForge.Domain.csproj", "{D0D9CE32-12B7-4CAA-9498-7BD3898AD446}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,8 +24,18 @@ Global
 		{F2E1C694-0D33-47DF-A0B8-483D02BF8075}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F2E1C694-0D33-47DF-A0B8-483D02BF8075}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F2E1C694-0D33-47DF-A0B8-483D02BF8075}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1CA0357-70CD-4540-8BBC-4911CA296A43}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1CA0357-70CD-4540-8BBC-4911CA296A43}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1CA0357-70CD-4540-8BBC-4911CA296A43}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1CA0357-70CD-4540-8BBC-4911CA296A43}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D0D9CE32-12B7-4CAA-9498-7BD3898AD446}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D0D9CE32-12B7-4CAA-9498-7BD3898AD446}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D0D9CE32-12B7-4CAA-9498-7BD3898AD446}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D0D9CE32-12B7-4CAA-9498-7BD3898AD446}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{F2E1C694-0D33-47DF-A0B8-483D02BF8075} = {E01D1105-3399-4545-9979-EC28B7EC1C8D}
+		{A1CA0357-70CD-4540-8BBC-4911CA296A43} = {E01D1105-3399-4545-9979-EC28B7EC1C8D}
+		{D0D9CE32-12B7-4CAA-9498-7BD3898AD446} = {E01D1105-3399-4545-9979-EC28B7EC1C8D}
 	EndGlobalSection
 EndGlobal
