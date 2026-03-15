@@ -98,6 +98,20 @@ public sealed class ImportJobsRepository
         await command.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task UpdateTotalRowsAsync(long jobId, int totalRows, CancellationToken ct)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE ImportJobs
+            SET TotalRows = @totalRows
+            WHERE Id = @jobId;
+            """;
+        command.Parameters.AddWithValue("@totalRows", totalRows);
+        command.Parameters.AddWithValue("@jobId", jobId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task SetClearedAtAsync(long jobId, DateTimeOffset clearedAtUtc, CancellationToken ct)
     {
         await using var connection = await _connectionFactory.OpenConnectionAsync(ct);

@@ -1,5 +1,6 @@
 using ImportForge.Api.Contracts;
 using ImportForge.Domain;
+using ImportForge.Infrastructure.Csv;
 using ImportForge.Infrastructure.Db;
 using ImportForge.Infrastructure.Processing;
 using ImportForge.Infrastructure.Repositories;
@@ -12,7 +13,9 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<DbConnectionFactory>();
 builder.Services.AddScoped<DbInitializer>();
 builder.Services.AddScoped<ImportJobsRepository>();
+builder.Services.AddScoped<ImportRowsRepository>();
 builder.Services.AddScoped<ImportRowErrorsRepository>();
+builder.Services.AddSingleton<StreamingCsvParser>();
 builder.Services.AddSingleton<ImportFileStorage>();
 builder.Services.AddSingleton<ImportJobProcessingQueue>();
 builder.Services.AddHostedService<ImportJobProcessingWorker>();

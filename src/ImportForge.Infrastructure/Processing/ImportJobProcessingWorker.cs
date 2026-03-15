@@ -1,3 +1,5 @@
+using System.Globalization;
+using ImportForge.Infrastructure.Csv;
 using ImportForge.Domain;
 using ImportForge.Infrastructure.Repositories;
 using ImportForge.Infrastructure.Storage;
@@ -9,6 +11,11 @@ namespace ImportForge.Infrastructure.Processing;
 
 public sealed class ImportJobProcessingWorker : BackgroundService
 {
+    private const int ExpectedColumnCount = 4;
+    private const string UnknownFieldName = "unknown";
+    private const string WrongColumnCountError = "Wrong column count.";
+    private const string MalformedLineError = "Malformed CSV row.";
+
     private readonly ImportJobProcessingQueue _processingQueue;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ImportJobProcessingWorker> _logger;
@@ -47,6 +54,9 @@ public sealed class ImportJobProcessingWorker : BackgroundService
     {
         await using var scope = _scopeFactory.CreateAsyncScope();
         var jobsRepository = scope.ServiceProvider.GetRequiredService<ImportJobsRepository>();
+        var rowsRepository = scope.ServiceProvider.GetRequiredService<ImportRowsRepository>();
+        var rowErrorsRepository = scope.ServiceProvider.GetRequiredService<ImportRowErrorsRepository>();
+        var csvParser = scope.ServiceProvider.GetRequiredService<StreamingCsvParser>();
         var fileStorage = scope.ServiceProvider.GetRequiredService<ImportFileStorage>();
 
         try
@@ -75,7 +85,20 @@ public sealed class ImportJobProcessingWorker : BackgroundService
                 return;
             }
 
-            _logger.LogInformation("Import job {JobId} processing finished.", jobId);
+            var totalRows = await ParseAndStageRowsAsync(
+                jobId,
+                stream,
+                csvParser,
+                rowsRepository,
+                rowErrorsRepository,
+                ct);
+
+            await jobsRepository.UpdateTotalRowsAsync(jobId, totalRows, ct);
+
+            _logger.LogInformation(
+                "Import job {JobId} processing finished. Parsed {TotalRows} row(s).",
+                jobId,
+                totalRows);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -102,5 +125,91 @@ public sealed class ImportJobProcessingWorker : BackgroundService
         {
             _logger.LogError(ex, "Failed to update import job {JobId} status to failed.", jobId);
         }
+    }
+
+    private static async Task<int> ParseAndStageRowsAsync(
+        long jobId,
+        Stream stream,
+        StreamingCsvParser csvParser,
+        ImportRowsRepository rowsRepository,
+        ImportRowErrorsRepository rowErrorsRepository,
+        CancellationToken ct)
+    {
+        var totalRows = 0;
+
+        await foreach (var parsedRow in csvParser.ParseAsync(stream, ct))
+        {
+            totalRows = parsedRow.RowNumber;
+
+            if (parsedRow.Kind == CsvRowParseKind.Malformed)
+            {
+                await StageStructuralErrorAsync(
+                    rowsRepository,
+                    rowErrorsRepository,
+                    jobId,
+                    parsedRow.RowNumber,
+                    MalformedLineError,
+                    ct);
+                continue;
+            }
+
+            if (parsedRow.Columns.Count != ExpectedColumnCount)
+            {
+                await StageStructuralErrorAsync(
+                    rowsRepository,
+                    rowErrorsRepository,
+                    jobId,
+                    parsedRow.RowNumber,
+                    WrongColumnCountError,
+                    ct);
+                continue;
+            }
+
+            var stagedRow = new ImportRowForInsert(
+                jobId,
+                parsedRow.RowNumber,
+                ToNullableText(parsedRow.Columns[0]),
+                ToNullableText(parsedRow.Columns[1]),
+                ToNullableInt(parsedRow.Columns[2]),
+                ToNullableInt(parsedRow.Columns[3]));
+
+            await rowsRepository.AddAsync(stagedRow, ct);
+        }
+
+        return totalRows;
+    }
+
+    private static async Task StageStructuralErrorAsync(
+        ImportRowsRepository rowsRepository,
+        ImportRowErrorsRepository rowErrorsRepository,
+        long jobId,
+        int rowNumber,
+        string error,
+        CancellationToken ct)
+    {
+        var rowId = await rowsRepository.AddAsync(
+            new ImportRowForInsert(
+                jobId,
+                rowNumber,
+                ProductId: null,
+                ProductName: null,
+                ProductRsdValue: null,
+                ProductQuantity: null),
+            ct);
+
+        await rowErrorsRepository.AddAsync(rowId, UnknownFieldName, error, ct);
+    }
+
+    private static string? ToNullableText(string value)
+        => value.Length == 0 ? null : value;
+
+    private static int? ToNullableInt(string value)
+    {
+        if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return null;
+        }
+
+        return parsed;
     }
 }
