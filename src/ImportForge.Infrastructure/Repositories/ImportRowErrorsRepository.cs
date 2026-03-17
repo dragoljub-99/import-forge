@@ -4,6 +4,8 @@ namespace ImportForge.Infrastructure.Repositories;
 
 public sealed class ImportRowErrorsRepository
 {
+    private const string UnknownFieldName = "unknown";
+
     private readonly DbConnectionFactory _connectionFactory;
 
     public ImportRowErrorsRepository(DbConnectionFactory connectionFactory)
@@ -51,5 +53,39 @@ public sealed class ImportRowErrorsRepository
         }
 
         return items;
+    }
+
+    public async Task DeleteFieldLevelByJobIdAsync(long jobId, CancellationToken ct)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            DELETE FROM ImportRowErrors
+            WHERE RowId IN (
+                SELECT Id
+                FROM ImportRows
+                WHERE JobId = @jobId
+            )
+            AND Field <> @unknownField;
+            """;
+        command.Parameters.AddWithValue("@jobId", jobId);
+        command.Parameters.AddWithValue("@unknownField", UnknownFieldName);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<int> CountDistinctRowsWithErrorsByJobIdAsync(long jobId, CancellationToken ct)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(DISTINCT e.RowId)
+            FROM ImportRowErrors e
+            INNER JOIN ImportRows r ON r.Id = e.RowId
+            WHERE r.JobId = @jobId;
+            """;
+        command.Parameters.AddWithValue("@jobId", jobId);
+
+        var scalar = await command.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(scalar);
     }
 }

@@ -93,12 +93,28 @@ public sealed class ImportJobProcessingWorker : BackgroundService
                 rowErrorsRepository,
                 ct);
 
-            await jobsRepository.UpdateTotalRowsAsync(jobId, totalRows, ct);
+            await ValidateStagedRowsAsync(
+                jobId,
+                rowsRepository,
+                rowErrorsRepository,
+                ct);
+
+            var invalidRows = await rowErrorsRepository.CountDistinctRowsWithErrorsByJobIdAsync(jobId, ct);
+            var validRows = totalRows - invalidRows;
+
+            await jobsRepository.UpdateCountersAsync(jobId, totalRows, validRows, invalidRows, ct);
+
+            if (invalidRows > 0)
+            {
+                await jobsRepository.UpdateStatusAsync(jobId, ImportJobStatus.NeedsFixes, ct);
+            }
 
             _logger.LogInformation(
-                "Import job {JobId} processing finished. Parsed {TotalRows} row(s).",
+                "Import job {JobId} processing finished. Parsed {TotalRows} row(s), valid {ValidRows}, invalid {InvalidRows}.",
                 jobId,
-                totalRows);
+                totalRows,
+                validRows,
+                invalidRows);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -177,6 +193,24 @@ public sealed class ImportJobProcessingWorker : BackgroundService
         }
 
         return totalRows;
+    }
+
+    private static async Task ValidateStagedRowsAsync(
+        long jobId,
+        ImportRowsRepository rowsRepository,
+        ImportRowErrorsRepository rowErrorsRepository,
+        CancellationToken ct)
+    {
+        await rowErrorsRepository.DeleteFieldLevelByJobIdAsync(jobId, ct);
+        var stagedRows = await rowsRepository.ListValidatableByJobIdAsync(jobId, ct);
+
+        foreach (var stagedRow in stagedRows)
+        {
+            foreach (var validationError in StagedImportRowValidator.Validate(stagedRow))
+            {
+                await rowErrorsRepository.AddAsync(stagedRow.Id, validationError.Field, validationError.Error, ct);
+            }
+        }
     }
 
     private static async Task StageStructuralErrorAsync(
