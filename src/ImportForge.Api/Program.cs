@@ -15,6 +15,7 @@ builder.Services.AddScoped<DbInitializer>();
 builder.Services.AddScoped<ImportJobsRepository>();
 builder.Services.AddScoped<ImportRowsRepository>();
 builder.Services.AddScoped<ImportRowErrorsRepository>();
+builder.Services.AddScoped<ImportJobAutoCommitService>();
 builder.Services.AddSingleton<StreamingCsvParser>();
 builder.Services.AddSingleton<ImportFileStorage>();
 builder.Services.AddSingleton<ImportJobProcessingQueue>();

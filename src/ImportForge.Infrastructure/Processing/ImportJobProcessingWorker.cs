@@ -56,6 +56,7 @@ public sealed class ImportJobProcessingWorker : BackgroundService
         var jobsRepository = scope.ServiceProvider.GetRequiredService<ImportJobsRepository>();
         var rowsRepository = scope.ServiceProvider.GetRequiredService<ImportRowsRepository>();
         var rowErrorsRepository = scope.ServiceProvider.GetRequiredService<ImportRowErrorsRepository>();
+        var autoCommitService = scope.ServiceProvider.GetRequiredService<ImportJobAutoCommitService>();
         var csvParser = scope.ServiceProvider.GetRequiredService<StreamingCsvParser>();
         var fileStorage = scope.ServiceProvider.GetRequiredService<ImportFileStorage>();
 
@@ -107,14 +108,32 @@ public sealed class ImportJobProcessingWorker : BackgroundService
             if (invalidRows > 0)
             {
                 await jobsRepository.UpdateStatusAsync(jobId, ImportJobStatus.NeedsFixes, ct);
+                _logger.LogInformation(
+                    "Import job {JobId} processing finished. Parsed {TotalRows} row(s), valid {ValidRows}, invalid {InvalidRows}.",
+                    jobId,
+                    totalRows,
+                    validRows,
+                    invalidRows);
+                return;
             }
 
-            _logger.LogInformation(
-                "Import job {JobId} processing finished. Parsed {TotalRows} row(s), valid {ValidRows}, invalid {InvalidRows}.",
-                jobId,
-                totalRows,
-                validRows,
-                invalidRows);
+            var autoCommitOutcome = await autoCommitService.ExecuteAsync(jobId, totalRows, ct);
+
+            if (autoCommitOutcome == ImportJobAutoCommitOutcome.Committed)
+            {
+                _logger.LogInformation(
+                    "Import job {JobId} processing finished and was committed. Parsed {TotalRows} row(s), valid {ValidRows}, invalid {InvalidRows}.",
+                    jobId,
+                    totalRows,
+                    validRows,
+                    invalidRows);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Import job {JobId} processing finished. Validation had no errors, but commit conflicts were detected and the job was moved to needs fixes.",
+                    jobId);
+            }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
