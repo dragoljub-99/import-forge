@@ -19,6 +19,7 @@ builder.Services.AddScoped<ImportJobAutoCommitService>();
 builder.Services.AddSingleton<StreamingCsvParser>();
 builder.Services.AddSingleton<ImportFileStorage>();
 builder.Services.AddSingleton<ImportJobProcessingQueue>();
+builder.Services.AddSingleton<ImportJobProcessingGuard>();
 builder.Services.AddHostedService<ImportJobProcessingWorker>();
 
 var app = builder.Build();

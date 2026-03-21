@@ -17,15 +17,18 @@ public sealed class ImportJobProcessingWorker : BackgroundService
     private const string MalformedLineError = "Malformed CSV row.";
 
     private readonly ImportJobProcessingQueue _processingQueue;
+    private readonly ImportJobProcessingGuard _processingGuard;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ImportJobProcessingWorker> _logger;
 
     public ImportJobProcessingWorker(
         ImportJobProcessingQueue processingQueue,
+        ImportJobProcessingGuard processingGuard,
         IServiceScopeFactory scopeFactory,
         ILogger<ImportJobProcessingWorker> logger)
     {
         _processingQueue = processingQueue;
+        _processingGuard = processingGuard;
         _scopeFactory = scopeFactory;
         _logger = logger;
     }
@@ -52,20 +55,39 @@ public sealed class ImportJobProcessingWorker : BackgroundService
 
     private async Task ProcessJobAsync(long jobId, CancellationToken ct)
     {
-        await using var scope = _scopeFactory.CreateAsyncScope();
-        var jobsRepository = scope.ServiceProvider.GetRequiredService<ImportJobsRepository>();
-        var rowsRepository = scope.ServiceProvider.GetRequiredService<ImportRowsRepository>();
-        var rowErrorsRepository = scope.ServiceProvider.GetRequiredService<ImportRowErrorsRepository>();
-        var autoCommitService = scope.ServiceProvider.GetRequiredService<ImportJobAutoCommitService>();
-        var csvParser = scope.ServiceProvider.GetRequiredService<StreamingCsvParser>();
-        var fileStorage = scope.ServiceProvider.GetRequiredService<ImportFileStorage>();
+        if (!_processingGuard.TryAcquire(jobId))
+        {
+            _logger.LogInformation(
+                "Import job {JobId} is already being processed. Skipping duplicate queue item.",
+                jobId);
+            return;
+        }
+
+        ImportJobsRepository? jobsRepository = null;
 
         try
         {
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            jobsRepository = scope.ServiceProvider.GetRequiredService<ImportJobsRepository>();
+            var rowsRepository = scope.ServiceProvider.GetRequiredService<ImportRowsRepository>();
+            var rowErrorsRepository = scope.ServiceProvider.GetRequiredService<ImportRowErrorsRepository>();
+            var autoCommitService = scope.ServiceProvider.GetRequiredService<ImportJobAutoCommitService>();
+            var csvParser = scope.ServiceProvider.GetRequiredService<StreamingCsvParser>();
+            var fileStorage = scope.ServiceProvider.GetRequiredService<ImportFileStorage>();
+
             var job = await jobsRepository.GetByIdAsync(jobId, ct);
             if (job is null)
             {
                 _logger.LogWarning("Import job {JobId} was dequeued but does not exist.", jobId);
+                return;
+            }
+
+            if (job.Status != ImportJobStatus.Processing)
+            {
+                _logger.LogInformation(
+                    "Import job {JobId} dequeued with status {Status}. Skipping processing.",
+                    jobId,
+                    job.Status);
                 return;
             }
 
@@ -142,7 +164,14 @@ public sealed class ImportJobProcessingWorker : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Import job {JobId} processing failed.", jobId);
-            await TryUpdateStatusToFailedAsync(jobsRepository, jobId, ct);
+            if (jobsRepository is not null)
+            {
+                await TryUpdateStatusToFailedAsync(jobsRepository, jobId, ct);
+            }
+        }
+        finally
+        {
+            _processingGuard.Release(jobId);
         }
     }
 
