@@ -27,6 +27,7 @@ public sealed class StreamingCsvParser
         var buffer = new char[4096];
         var currentField = new StringBuilder();
         var columns = new List<string>(capacity: 4);
+        var rawRow = new StringBuilder();
 
         var fieldState = FieldState.StartOfField;
         var rowNumber = 0;
@@ -87,6 +88,7 @@ public sealed class StreamingCsvParser
         void ConsumeChar(char ch)
         {
             rowHasAnyCharacter = true;
+            rawRow.Append(ch);
 
             if (rowIsMalformed)
             {
@@ -182,7 +184,11 @@ public sealed class StreamingCsvParser
             CsvRowParseResult result;
             if (rowIsMalformed || fieldState == FieldState.InQuotedField)
             {
-                result = new CsvRowParseResult(rowNumber, CsvRowParseKind.Malformed, Array.Empty<string>());
+                result = new CsvRowParseResult(
+                    rowNumber,
+                    CsvRowParseKind.Malformed,
+                    Array.Empty<string>(),
+                    rawRow.ToString());
             }
             else
             {
@@ -197,11 +203,16 @@ public sealed class StreamingCsvParser
                         break;
                 }
 
-                result = new CsvRowParseResult(rowNumber, CsvRowParseKind.Parsed, columns.ToArray());
+                result = new CsvRowParseResult(
+                    rowNumber,
+                    CsvRowParseKind.Parsed,
+                    columns.ToArray(),
+                    rawRow.ToString());
             }
 
             currentField.Clear();
             columns.Clear();
+            rawRow.Clear();
             fieldState = FieldState.StartOfField;
             rowIsMalformed = false;
             rowHasAnyCharacter = false;

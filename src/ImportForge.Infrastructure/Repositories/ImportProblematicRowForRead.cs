@@ -1,11 +1,10 @@
 namespace ImportForge.Infrastructure.Repositories;
 
-public sealed record ImportRowForInsert(
-    long JobId,
+public sealed record ImportProblematicRowForRead(
     int RowNumber,
+    string? SourceRaw,
+    int? SourceColumnCount,
     string? ProductId,
     string? ProductName,
     int? ProductRsdValue,
-    int? ProductQuantity,
-    string? SourceRaw,
-    int? SourceColumnCount);
+    int? ProductQuantity);

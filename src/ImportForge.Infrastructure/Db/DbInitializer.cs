@@ -47,6 +47,8 @@ public sealed class DbInitializer
             ProductName TEXT NULL,
             ProductRsdValue INTEGER NULL,
             ProductQuantity INTEGER NULL,
+            SourceRaw TEXT NULL,
+            SourceColumnCount INTEGER NULL,
             FOREIGN KEY (JobId) REFERENCES ImportJobs(Id) ON DELETE CASCADE
         );
 
@@ -74,5 +76,39 @@ public sealed class DbInitializer
         await using var command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        await EnsureImportRowsColumnsAsync(connection, cancellationToken);
+    }
+
+    private static async Task EnsureImportRowsColumnsAsync(SqliteConnection connection, CancellationToken cancellationToken)
+    {
+        await TryAddColumnAsync(
+            connection,
+            "ALTER TABLE ImportRows ADD COLUMN SourceRaw TEXT NULL;",
+            cancellationToken);
+
+        await TryAddColumnAsync(
+            connection,
+            "ALTER TABLE ImportRows ADD COLUMN SourceColumnCount INTEGER NULL;",
+            cancellationToken);
+    }
+
+    private static async Task TryAddColumnAsync(
+        SqliteConnection connection,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        try
+        {
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        catch (SqliteException ex)
+            when (ex.SqliteErrorCode == 1
+                && ex.Message.Contains("duplicate column name", StringComparison.OrdinalIgnoreCase))
+        {
+        }
     }
 }

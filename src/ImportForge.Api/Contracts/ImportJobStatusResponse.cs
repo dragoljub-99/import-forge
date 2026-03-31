@@ -9,4 +9,6 @@ public sealed record ImportJobStatusResponse(
     int ValidRows,
     int InvalidRows,
     string? ClearedAt,
-    IReadOnlyList<RowErrorsDto> ErrorsByRow);
+    bool HasProblematicRows,
+    int ProblematicRowsCount,
+    string ProblematicRowsEndpoint);

@@ -204,14 +204,14 @@ public sealed class ImportJobProcessingWorker : BackgroundService
         await foreach (var parsedRow in csvParser.ParseAsync(stream, ct))
         {
             totalRows = parsedRow.RowNumber;
+            var stagedRow = ToStagedRowForInsert(jobId, parsedRow);
 
             if (parsedRow.Kind == CsvRowParseKind.Malformed)
             {
                 await StageStructuralErrorAsync(
                     rowsRepository,
                     rowErrorsRepository,
-                    jobId,
-                    parsedRow.RowNumber,
+                    stagedRow,
                     MalformedLineError,
                     ct);
                 continue;
@@ -222,20 +222,11 @@ public sealed class ImportJobProcessingWorker : BackgroundService
                 await StageStructuralErrorAsync(
                     rowsRepository,
                     rowErrorsRepository,
-                    jobId,
-                    parsedRow.RowNumber,
+                    stagedRow,
                     WrongColumnCountError,
                     ct);
                 continue;
             }
-
-            var stagedRow = new ImportRowForInsert(
-                jobId,
-                parsedRow.RowNumber,
-                ToNullableText(parsedRow.Columns[0]),
-                ToNullableText(parsedRow.Columns[1]),
-                ToNullableInt(parsedRow.Columns[2]),
-                ToNullableInt(parsedRow.Columns[3]));
 
             await rowsRepository.AddAsync(stagedRow, ct);
         }
@@ -264,29 +255,44 @@ public sealed class ImportJobProcessingWorker : BackgroundService
     private static async Task StageStructuralErrorAsync(
         ImportRowsRepository rowsRepository,
         ImportRowErrorsRepository rowErrorsRepository,
-        long jobId,
-        int rowNumber,
+        ImportRowForInsert row,
         string error,
         CancellationToken ct)
     {
-        var rowId = await rowsRepository.AddAsync(
-            new ImportRowForInsert(
-                jobId,
-                rowNumber,
-                ProductId: null,
-                ProductName: null,
-                ProductRsdValue: null,
-                ProductQuantity: null),
-            ct);
+        var rowId = await rowsRepository.AddAsync(row, ct);
 
         await rowErrorsRepository.AddAsync(rowId, UnknownFieldName, error, ct);
     }
 
-    private static string? ToNullableText(string value)
-        => value.Length == 0 ? null : value;
-
-    private static int? ToNullableInt(string value)
+    private static ImportRowForInsert ToStagedRowForInsert(long jobId, CsvRowParseResult parsedRow)
     {
+        var columns = parsedRow.Columns;
+        var sourceColumnCount = parsedRow.Kind == CsvRowParseKind.Parsed ? (int?)columns.Count : null;
+
+        return new ImportRowForInsert(
+            jobId,
+            parsedRow.RowNumber,
+            ToNullableText(GetColumnOrNull(columns, 0)),
+            ToNullableText(GetColumnOrNull(columns, 1)),
+            ToNullableInt(GetColumnOrNull(columns, 2)),
+            ToNullableInt(GetColumnOrNull(columns, 3)),
+            parsedRow.RawText,
+            sourceColumnCount);
+    }
+
+    private static string? GetColumnOrNull(IReadOnlyList<string> columns, int index)
+        => index >= columns.Count ? null : columns[index];
+
+    private static string? ToNullableText(string? value)
+        => string.IsNullOrEmpty(value) ? null : value;
+
+    private static int? ToNullableInt(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return null;
+        }
+
         if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
         {
             return null;

@@ -19,8 +19,8 @@ public sealed class ImportRowsRepository
         await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            INSERT INTO ImportRows (JobId, RowNumber, ProductId, ProductName, ProductRsdValue, ProductQuantity)
-            VALUES (@jobId, @rowNumber, @productId, @productName, @productRsdValue, @productQuantity);
+            INSERT INTO ImportRows (JobId, RowNumber, ProductId, ProductName, ProductRsdValue, ProductQuantity, SourceRaw, SourceColumnCount)
+            VALUES (@jobId, @rowNumber, @productId, @productName, @productRsdValue, @productQuantity, @sourceRaw, @sourceColumnCount);
             SELECT last_insert_rowid();
             """;
         command.Parameters.AddWithValue("@jobId", row.JobId);
@@ -29,6 +29,8 @@ public sealed class ImportRowsRepository
         command.Parameters.AddWithValue("@productName", (object?)row.ProductName ?? DBNull.Value);
         command.Parameters.AddWithValue("@productRsdValue", (object?)row.ProductRsdValue ?? DBNull.Value);
         command.Parameters.AddWithValue("@productQuantity", (object?)row.ProductQuantity ?? DBNull.Value);
+        command.Parameters.AddWithValue("@sourceRaw", (object?)row.SourceRaw ?? DBNull.Value);
+        command.Parameters.AddWithValue("@sourceColumnCount", (object?)row.SourceColumnCount ?? DBNull.Value);
 
         var scalar = await command.ExecuteScalarAsync(ct);
         return Convert.ToInt64(scalar, CultureInfo.InvariantCulture);
@@ -104,6 +106,49 @@ public sealed class ImportRowsRepository
                     reader.GetInt64(reader.GetOrdinal("Id")),
                     reader.GetInt64(reader.GetOrdinal("JobId")),
                     reader.GetInt32(reader.GetOrdinal("RowNumber")),
+                    reader.IsDBNull(productIdOrdinal) ? null : reader.GetString(productIdOrdinal),
+                    reader.IsDBNull(productNameOrdinal) ? null : reader.GetString(productNameOrdinal),
+                    reader.IsDBNull(productRsdValueOrdinal) ? null : reader.GetInt32(productRsdValueOrdinal),
+                    reader.IsDBNull(productQuantityOrdinal) ? null : reader.GetInt32(productQuantityOrdinal)));
+        }
+
+        return rows;
+    }
+
+    public async Task<IReadOnlyList<ImportProblematicRowForRead>> ListProblematicByJobIdAsync(long jobId, CancellationToken ct)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT r.RowNumber, r.SourceRaw, r.SourceColumnCount, r.ProductId, r.ProductName, r.ProductRsdValue, r.ProductQuantity
+            FROM ImportRows r
+            WHERE r.JobId = @jobId
+                AND EXISTS (
+                    SELECT 1
+                    FROM ImportRowErrors e
+                    WHERE e.RowId = r.Id
+                )
+            ORDER BY r.RowNumber ASC;
+            """;
+        command.Parameters.AddWithValue("@jobId", jobId);
+
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var rows = new List<ImportProblematicRowForRead>();
+
+        while (await reader.ReadAsync(ct))
+        {
+            var sourceRawOrdinal = reader.GetOrdinal("SourceRaw");
+            var sourceColumnCountOrdinal = reader.GetOrdinal("SourceColumnCount");
+            var productIdOrdinal = reader.GetOrdinal("ProductId");
+            var productNameOrdinal = reader.GetOrdinal("ProductName");
+            var productRsdValueOrdinal = reader.GetOrdinal("ProductRsdValue");
+            var productQuantityOrdinal = reader.GetOrdinal("ProductQuantity");
+
+            rows.Add(
+                new ImportProblematicRowForRead(
+                    reader.GetInt32(reader.GetOrdinal("RowNumber")),
+                    reader.IsDBNull(sourceRawOrdinal) ? null : reader.GetString(sourceRawOrdinal),
+                    reader.IsDBNull(sourceColumnCountOrdinal) ? null : reader.GetInt32(sourceColumnCountOrdinal),
                     reader.IsDBNull(productIdOrdinal) ? null : reader.GetString(productIdOrdinal),
                     reader.IsDBNull(productNameOrdinal) ? null : reader.GetString(productNameOrdinal),
                     reader.IsDBNull(productRsdValueOrdinal) ? null : reader.GetInt32(productRsdValueOrdinal),

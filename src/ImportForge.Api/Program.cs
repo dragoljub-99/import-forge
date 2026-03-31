@@ -117,6 +117,38 @@ app.MapGet(
     async (
         long jobId,
         ImportJobsRepository jobsRepository,
+        HttpContext httpContext) =>
+    {
+        var ct = httpContext.RequestAborted;
+
+        var job = await jobsRepository.GetByIdAsync(jobId, ct);
+        if (job is null)
+        {
+            return Results.NotFound();
+        }
+
+        var problematicRowsCount = job.InvalidRows;
+
+        var response = new ImportJobStatusResponse(
+            job.Id,
+            job.Status,
+            job.TotalRows,
+            job.ValidRows,
+            job.InvalidRows,
+            job.ClearedAt?.ToString("O"),
+            problematicRowsCount > 0,
+            problematicRowsCount,
+            $"/import-jobs/{jobId}/problematic-rows");
+
+        return Results.Ok(response);
+    });
+
+app.MapGet(
+    "/import-jobs/{jobId:long}/problematic-rows",
+    async (
+        long jobId,
+        ImportJobsRepository jobsRepository,
+        ImportRowsRepository rowsRepository,
         ImportRowErrorsRepository rowErrorsRepository,
         HttpContext httpContext) =>
     {
@@ -128,24 +160,34 @@ app.MapGet(
             return Results.NotFound();
         }
 
+        var problematicRows = await rowsRepository.ListProblematicByJobIdAsync(jobId, ct);
         var rowErrors = await rowErrorsRepository.ListByJobIdAsync(jobId, ct);
-        var errorsByRow = rowErrors.Count == 0
-            ? Array.Empty<RowErrorsDto>()
-            : rowErrors
-                .GroupBy(item => item.RowNumber)
-                .Select(group => new RowErrorsDto(
-                    group.Key,
-                    group.Select(item => new ErrorDto(item.Field, item.Error)).ToArray()))
-                .ToArray();
 
-        var response = new ImportJobStatusResponse(
+        var errorsByRow = rowErrors
+            .GroupBy(item => item.RowNumber)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<ErrorDto>)group
+                    .Select(item => new ErrorDto(item.Field, item.Error))
+                    .ToArray());
+
+        var rows = problematicRows
+            .Select(row =>
+                new ProblematicRowDto(
+                    row.RowNumber,
+                    row.SourceRaw,
+                    row.SourceColumnCount,
+                    row.ProductId,
+                    row.ProductName,
+                    row.ProductRsdValue,
+                    row.ProductQuantity,
+                    errorsByRow.TryGetValue(row.RowNumber, out var errors) ? errors : Array.Empty<ErrorDto>()))
+            .ToArray();
+
+        var response = new ImportJobProblematicRowsResponse(
             job.Id,
-            job.Status,
-            job.TotalRows,
-            job.ValidRows,
-            job.InvalidRows,
-            job.ClearedAt?.ToString("O"),
-            errorsByRow);
+            rows.Length,
+            rows);
 
         return Results.Ok(response);
     });
