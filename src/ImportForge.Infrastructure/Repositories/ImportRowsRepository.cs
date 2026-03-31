@@ -72,6 +72,68 @@ public sealed class ImportRowsRepository
         return rows;
     }
 
+    public async Task<ImportRowForValidation?> GetByJobIdAndRowNumberAsync(long jobId, int rowNumber, CancellationToken ct)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, JobId, RowNumber, ProductId, ProductName, ProductRsdValue, ProductQuantity
+            FROM ImportRows
+            WHERE JobId = @jobId
+              AND RowNumber = @rowNumber
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@jobId", jobId);
+        command.Parameters.AddWithValue("@rowNumber", rowNumber);
+
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+        {
+            return null;
+        }
+
+        var productIdOrdinal = reader.GetOrdinal("ProductId");
+        var productNameOrdinal = reader.GetOrdinal("ProductName");
+        var productRsdValueOrdinal = reader.GetOrdinal("ProductRsdValue");
+        var productQuantityOrdinal = reader.GetOrdinal("ProductQuantity");
+
+        return new ImportRowForValidation(
+            reader.GetInt64(reader.GetOrdinal("Id")),
+            reader.GetInt64(reader.GetOrdinal("JobId")),
+            reader.GetInt32(reader.GetOrdinal("RowNumber")),
+            reader.IsDBNull(productIdOrdinal) ? null : reader.GetString(productIdOrdinal),
+            reader.IsDBNull(productNameOrdinal) ? null : reader.GetString(productNameOrdinal),
+            reader.IsDBNull(productRsdValueOrdinal) ? null : reader.GetInt32(productRsdValueOrdinal),
+            reader.IsDBNull(productQuantityOrdinal) ? null : reader.GetInt32(productQuantityOrdinal));
+    }
+
+    public async Task UpdateBusinessFieldsAsync(
+        long rowId,
+        string? productId,
+        string? productName,
+        int? productRsdValue,
+        int? productQuantity,
+        CancellationToken ct)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE ImportRows
+            SET
+                ProductId = @productId,
+                ProductName = @productName,
+                ProductRsdValue = @productRsdValue,
+                ProductQuantity = @productQuantity
+            WHERE Id = @rowId;
+            """;
+        command.Parameters.AddWithValue("@productId", (object?)productId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@productName", (object?)productName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@productRsdValue", (object?)productRsdValue ?? DBNull.Value);
+        command.Parameters.AddWithValue("@productQuantity", (object?)productQuantity ?? DBNull.Value);
+        command.Parameters.AddWithValue("@rowId", rowId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<IReadOnlyList<ImportRowForValidation>> ListValidatableByJobIdAsync(long jobId, CancellationToken ct)
     {
         await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
@@ -156,5 +218,20 @@ public sealed class ImportRowsRepository
         }
 
         return rows;
+    }
+
+    public async Task<int> CountByJobIdAsync(long jobId, CancellationToken ct)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(1)
+            FROM ImportRows
+            WHERE JobId = @jobId;
+            """;
+        command.Parameters.AddWithValue("@jobId", jobId);
+
+        var scalar = await command.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
     }
 }

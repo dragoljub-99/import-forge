@@ -16,6 +16,7 @@ builder.Services.AddScoped<ImportJobsRepository>();
 builder.Services.AddScoped<ImportRowsRepository>();
 builder.Services.AddScoped<ImportRowErrorsRepository>();
 builder.Services.AddScoped<ImportJobAutoCommitService>();
+builder.Services.AddScoped<ImportRowRepairService>();
 builder.Services.AddSingleton<StreamingCsvParser>();
 builder.Services.AddSingleton<ImportFileStorage>();
 builder.Services.AddSingleton<ImportJobProcessingQueue>();
@@ -190,6 +191,47 @@ app.MapGet(
             rows);
 
         return Results.Ok(response);
+    });
+
+app.MapPatch(
+    "/import-jobs/{jobId:long}/rows/{rowNumber:int}",
+    async (
+        long jobId,
+        int rowNumber,
+        RepairImportRowRequest? request,
+        ImportRowRepairService rowRepairService,
+        HttpContext httpContext) =>
+    {
+        if (request is null)
+        {
+            return Results.BadRequest(new { message = "Request body is required." });
+        }
+
+        var patch = new StagedImportRowPatch(
+            request.HasProductId,
+            request.ProductId,
+            request.HasProductName,
+            request.ProductName,
+            request.HasProductRsdValue,
+            request.ProductRsdValue,
+            request.HasProductQuantity,
+            request.ProductQuantity);
+
+        var result = await rowRepairService.RepairAsync(jobId, rowNumber, patch, httpContext.RequestAborted);
+
+        return result.Status switch
+        {
+            ImportRowRepairResultStatus.JobNotFound => Results.NotFound(),
+            ImportRowRepairResultStatus.JobNotInNeedsFixes => Results.Conflict(
+                new { message = "Only jobs in NeedsFixes can be repaired." }),
+            ImportRowRepairResultStatus.RowNotFound => Results.NotFound(),
+            ImportRowRepairResultStatus.NoFieldsProvided => Results.BadRequest(
+                new { message = "At least one business field must be provided." }),
+            ImportRowRepairResultStatus.StructuralRowRequiresFullPayload => Results.BadRequest(
+                new { message = "Rows with structural errors require all business fields: ProductId, ProductName, ProductRsdValue, ProductQuantity." }),
+            ImportRowRepairResultStatus.Repaired => Results.NoContent(),
+            _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError)
+        };
     });
 
 app.Run();

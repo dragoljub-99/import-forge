@@ -17,3 +17,4 @@ DockerWithNoOtherDependencies/**/images/
 /src/ImportForge.Api/data/*.db
 /src/ImportForge.Api/data/*.db-wal
 /src/ImportForge.Api/data/*.db-shm
+*.csv
