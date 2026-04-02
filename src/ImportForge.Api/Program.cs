@@ -17,6 +17,8 @@ builder.Services.AddScoped<ImportRowsRepository>();
 builder.Services.AddScoped<ImportRowErrorsRepository>();
 builder.Services.AddScoped<ImportJobAutoCommitService>();
 builder.Services.AddScoped<ImportRowRepairService>();
+builder.Services.AddScoped<ImportJobStagingRevalidationService>();
+builder.Services.AddScoped<ImportJobFinalizationService>();
 builder.Services.AddSingleton<StreamingCsvParser>();
 builder.Services.AddSingleton<ImportFileStorage>();
 builder.Services.AddSingleton<ImportJobProcessingQueue>();
@@ -230,6 +232,48 @@ app.MapPatch(
             ImportRowRepairResultStatus.StructuralRowRequiresFullPayload => Results.BadRequest(
                 new { message = "Rows with structural errors require all business fields: ProductId, ProductName, ProductRsdValue, ProductQuantity." }),
             ImportRowRepairResultStatus.Repaired => Results.NoContent(),
+            _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError)
+        };
+    });
+
+app.MapPost(
+    "/import-jobs/{jobId:long}/finalize",
+    async (
+        long jobId,
+        ImportJobFinalizationService finalizationService,
+        HttpContext httpContext) =>
+    {
+        var result = await finalizationService.FinalizeFromStagingAsync(jobId, httpContext.RequestAborted);
+
+        return result.Status switch
+        {
+            ImportJobFinalizationResultStatus.JobNotFound => Results.NotFound(),
+            ImportJobFinalizationResultStatus.JobNotInNeedsFixes => Results.Conflict(
+                new { message = "Only jobs in NeedsFixes can be finalized." }),
+            ImportJobFinalizationResultStatus.InvalidRowsRemain => Results.Conflict(
+                new
+                {
+                    message = "Finalize blocked because invalid rows still exist.",
+                    result.TotalRows,
+                    result.ValidRows,
+                    result.InvalidRows
+                }),
+            ImportJobFinalizationResultStatus.Committed => Results.Ok(
+                new
+                {
+                    message = "Import job finalized and committed.",
+                    result.TotalRows,
+                    result.ValidRows,
+                    result.InvalidRows
+                }),
+            ImportJobFinalizationResultStatus.CommitConflictsDetected => Results.Conflict(
+                new
+                {
+                    message = "Finalize reached commit stage, but commit conflicts moved the job back to NeedsFixes.",
+                    result.TotalRows,
+                    result.ValidRows,
+                    result.InvalidRows
+                }),
             _ => Results.Problem(statusCode: StatusCodes.Status500InternalServerError)
         };
     });

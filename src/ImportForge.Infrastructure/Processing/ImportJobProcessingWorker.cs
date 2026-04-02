@@ -72,6 +72,7 @@ public sealed class ImportJobProcessingWorker : BackgroundService
             var rowsRepository = scope.ServiceProvider.GetRequiredService<ImportRowsRepository>();
             var rowErrorsRepository = scope.ServiceProvider.GetRequiredService<ImportRowErrorsRepository>();
             var autoCommitService = scope.ServiceProvider.GetRequiredService<ImportJobAutoCommitService>();
+            var revalidationService = scope.ServiceProvider.GetRequiredService<ImportJobStagingRevalidationService>();
             var csvParser = scope.ServiceProvider.GetRequiredService<StreamingCsvParser>();
             var fileStorage = scope.ServiceProvider.GetRequiredService<ImportFileStorage>();
 
@@ -108,7 +109,7 @@ public sealed class ImportJobProcessingWorker : BackgroundService
                 return;
             }
 
-            var totalRows = await ParseAndStageRowsAsync(
+            await ParseAndStageRowsAsync(
                 jobId,
                 stream,
                 csvParser,
@@ -116,16 +117,10 @@ public sealed class ImportJobProcessingWorker : BackgroundService
                 rowErrorsRepository,
                 ct);
 
-            await ValidateStagedRowsAsync(
-                jobId,
-                rowsRepository,
-                rowErrorsRepository,
-                ct);
-
-            var invalidRows = await rowErrorsRepository.CountDistinctRowsWithErrorsByJobIdAsync(jobId, ct);
-            var validRows = totalRows - invalidRows;
-
-            await jobsRepository.UpdateCountersAsync(jobId, totalRows, validRows, invalidRows, ct);
+            var validationSnapshot = await revalidationService.RevalidateAndRefreshCountersAsync(jobId, ct);
+            var totalRows = validationSnapshot.TotalRows;
+            var validRows = validationSnapshot.ValidRows;
+            var invalidRows = validationSnapshot.InvalidRows;
 
             if (invalidRows > 0)
             {
@@ -191,7 +186,7 @@ public sealed class ImportJobProcessingWorker : BackgroundService
         }
     }
 
-    private static async Task<int> ParseAndStageRowsAsync(
+    private static async Task ParseAndStageRowsAsync(
         long jobId,
         Stream stream,
         StreamingCsvParser csvParser,
@@ -199,11 +194,8 @@ public sealed class ImportJobProcessingWorker : BackgroundService
         ImportRowErrorsRepository rowErrorsRepository,
         CancellationToken ct)
     {
-        var totalRows = 0;
-
         await foreach (var parsedRow in csvParser.ParseAsync(stream, ct))
         {
-            totalRows = parsedRow.RowNumber;
             var stagedRow = ToStagedRowForInsert(jobId, parsedRow);
 
             if (parsedRow.Kind == CsvRowParseKind.Malformed)
@@ -229,26 +221,6 @@ public sealed class ImportJobProcessingWorker : BackgroundService
             }
 
             await rowsRepository.AddAsync(stagedRow, ct);
-        }
-
-        return totalRows;
-    }
-
-    private static async Task ValidateStagedRowsAsync(
-        long jobId,
-        ImportRowsRepository rowsRepository,
-        ImportRowErrorsRepository rowErrorsRepository,
-        CancellationToken ct)
-    {
-        await rowErrorsRepository.DeleteFieldLevelByJobIdAsync(jobId, ct);
-        var stagedRows = await rowsRepository.ListValidatableByJobIdAsync(jobId, ct);
-
-        foreach (var stagedRow in stagedRows)
-        {
-            foreach (var validationError in StagedImportRowValidator.Validate(stagedRow))
-            {
-                await rowErrorsRepository.AddAsync(stagedRow.Id, validationError.Field, validationError.Error, ct);
-            }
         }
     }
 
