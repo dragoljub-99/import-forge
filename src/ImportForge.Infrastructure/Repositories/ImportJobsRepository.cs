@@ -125,4 +125,27 @@ public sealed class ImportJobsRepository
         command.Parameters.AddWithValue("@jobId", jobId);
         await command.ExecuteNonQueryAsync(ct);
     }
+
+    public async Task<List<int>> GetIdsByStatusAsync(ImportJobStatus status, CancellationToken ct)
+    {
+        List<int> ids = new();
+        await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+             SELECT Id 
+             FROM ImportJobs
+             WHERE Status = @status
+             """;
+        command.Parameters.AddWithValue("@status", ImportJobStatusDbTokens.ToToken(status));
+
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                ids.Add(Convert.ToInt32(reader.GetInt32(0)));
+            }
+        }
+
+        return ids;
+    }
 }

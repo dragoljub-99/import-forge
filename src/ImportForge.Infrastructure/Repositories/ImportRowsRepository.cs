@@ -234,4 +234,18 @@ public sealed class ImportRowsRepository
         var scalar = await command.ExecuteScalarAsync(ct);
         return Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
     }
+
+    public async Task<int> DeleteByJobIdAsync(long jobId, CancellationToken ct)
+    {
+        await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+              DELETE FROM ImportRows
+              WHERE JobId = @jobId
+              """;
+
+        command.Parameters.AddWithValue("@jobId", jobId);
+
+        return await command.ExecuteNonQueryAsync(ct);
+    }
 }

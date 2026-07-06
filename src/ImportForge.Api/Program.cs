@@ -24,13 +24,20 @@ builder.Services.AddSingleton<ImportFileStorage>();
 builder.Services.AddSingleton<ImportJobProcessingQueue>();
 builder.Services.AddSingleton<ImportJobProcessingGuard>();
 builder.Services.AddHostedService<ImportJobProcessingWorker>();
+builder.Services.AddScoped<ImportJobRecoveryService>();
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateAsyncScope())
+await using (var scope = app.Services.CreateAsyncScope())
 {
+var ct = app.Lifetime.ApplicationStopping;
+
     var dbInitializer = scope.ServiceProvider.GetRequiredService<DbInitializer>();
     await dbInitializer.InitializeAsync(app.Lifetime.ApplicationStopping);
+
+    var recoveryService = scope.ServiceProvider.GetRequiredService<ImportJobRecoveryService>();
+
+    await recoveryService.RecoverAsync(ct);
 }
 
 if (app.Environment.IsDevelopment()) 

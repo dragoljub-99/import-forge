@@ -61,4 +61,18 @@ public sealed class ImportFileStorage
 
         return null;
     }
+
+    public  bool DeleteIfExists(long jobId)
+    {
+        var filePath = GetFilePath(jobId);
+
+        if (!File.Exists(filePath))
+        {
+            return false;
+        }
+
+        File.Delete(filePath);
+        return true;
+
+    }
 }
