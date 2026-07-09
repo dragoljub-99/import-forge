@@ -49,18 +49,22 @@ namespace ImportForge.Infrastructure.Processing
                 var fileDeleted =  _importFileStorage.DeleteIfExists(job);
 
                 recoveredJobsCount++;
-                deletedFilesCount++;
+                deletedRowsCount += deletedRows;
 
                 if (fileDeleted)
                 {
-                    deletedRowsCount++;
+                    deletedFilesCount++;
                 }
             }
 
-            _logger.LogInformation($"Startup import job recovery completed. Recovered jobs: {recoveredJobsCount}, deleted staging rows: {deletedRowsCount},  deleted uploaded files: {deletedRowsCount}");
+        _logger.LogInformation(
+        "Startup import job recovery completed. Recovered jobs: {RecoveredJobs}, deleted staging rows: {DeletedRows}, deleted uploaded files: {DeletedFiles}.",
+         recoveredJobsCount,
+         deletedRowsCount,
+         deletedFilesCount);
                                     
                                     
-            return new ImportJobRecoveryResult(recoveredJobsCount, deletedFilesCount, deletedRowsCount);
+            return new ImportJobRecoveryResult(recoveredJobsCount, deletedRowsCount, deletedFilesCount);
         }
     }
 }

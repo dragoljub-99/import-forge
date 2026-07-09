@@ -126,9 +126,9 @@ public sealed class ImportJobsRepository
         await command.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task<List<int>> GetIdsByStatusAsync(ImportJobStatus status, CancellationToken ct)
+    public async Task<List<long>> GetIdsByStatusAsync(ImportJobStatus status, CancellationToken ct)
     {
-        List<int> ids = new();
+        List<long> ids = new();
         await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
         await using var command = connection.CreateCommand();
         command.CommandText = """
@@ -142,7 +142,7 @@ public sealed class ImportJobsRepository
         {
             while (await reader.ReadAsync(ct))
             {
-                ids.Add(Convert.ToInt32(reader.GetInt32(0)));
+                ids.Add(reader.GetInt64(0));
             }
         }
 

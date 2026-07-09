@@ -1,7 +1,7 @@
 namespace ImportForge.Domain
 {
-    public sealed record ImportJobRecoveryResult(int recoveredJobs,
-                                                int DeletedFiles,
-                                                int DeletedRows);
+    public sealed record ImportJobRecoveryResult(int RecoveredJobs,
+                                                int DeletedRows,
+                                                int DeletedFiles);
     
 }

@@ -30,13 +30,12 @@ var app = builder.Build();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {
-var ct = app.Lifetime.ApplicationStopping;
+    var ct = app.Lifetime.ApplicationStopping;
 
     var dbInitializer = scope.ServiceProvider.GetRequiredService<DbInitializer>();
-    await dbInitializer.InitializeAsync(app.Lifetime.ApplicationStopping);
+    await dbInitializer.InitializeAsync(ct);
 
     var recoveryService = scope.ServiceProvider.GetRequiredService<ImportJobRecoveryService>();
-
     await recoveryService.RecoverAsync(ct);
 }
 
