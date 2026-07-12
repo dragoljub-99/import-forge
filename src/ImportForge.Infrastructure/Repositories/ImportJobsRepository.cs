@@ -1,6 +1,7 @@
 using System.Globalization;
 using ImportForge.Domain;
 using ImportForge.Infrastructure.Db;
+using Microsoft.Data.Sqlite;
 
 namespace ImportForge.Infrastructure.Repositories;
 
@@ -41,28 +42,40 @@ public sealed class ImportJobsRepository
         command.Parameters.AddWithValue("@jobId", jobId);
 
         await using var reader = await command.ExecuteReaderAsync(ct);
+
         if (!await reader.ReadAsync(ct))
         {
             return null;
         }
 
-        var statusToken = reader.GetString(reader.GetOrdinal("Status"));
-        var clearedAtOrdinal = reader.GetOrdinal("ClearedAt");
+        return ReadImportJob(reader);
+    }
 
-        DateTimeOffset? clearedAt = null;
-        if (!reader.IsDBNull(clearedAtOrdinal))
+    public async Task<ImportJob?> GetByIdAsync(SqliteConnection connection,
+                                               SqliteTransaction transaction,
+                                               long jobId,
+                                               CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+
+        command.CommandText = """
+            SELECT Id, Status, TotalRows, ValidRows, InvalidRows, ClearedAt
+            FROM ImportJobs
+            WHERE Id = @jobId
+            LIMIT 1;
+            """;
+
+        command.Parameters.AddWithValue("@jobId", jobId);
+
+        await using var reader = await command.ExecuteReaderAsync(ct);
+
+        if (!await reader.ReadAsync(ct))
         {
-            var clearedAtText = reader.GetString(clearedAtOrdinal);
-            clearedAt = DateTimeOffset.Parse(clearedAtText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+            return null;
         }
 
-        return new ImportJob(
-            reader.GetInt64(reader.GetOrdinal("Id")),
-            ImportJobStatusDbTokens.FromToken(statusToken),
-            reader.GetInt32(reader.GetOrdinal("TotalRows")),
-            reader.GetInt32(reader.GetOrdinal("ValidRows")),
-            reader.GetInt32(reader.GetOrdinal("InvalidRows")),
-            clearedAt);
+        return ReadImportJob(reader);
     }
 
     public async Task UpdateStatusAsync(long jobId, ImportJobStatus status, CancellationToken ct)
@@ -76,6 +89,27 @@ public sealed class ImportJobsRepository
             """;
         command.Parameters.AddWithValue("@status", ImportJobStatusDbTokens.ToToken(status));
         command.Parameters.AddWithValue("@jobId", jobId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task UpdateStatusAsync(SqliteConnection connection,
+                                        SqliteTransaction transaction,
+                                        long jobId,
+                                        ImportJobStatus status,
+                                        CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+
+        command.CommandText = """
+            UPDATE ImportJobs
+            SET Status = @status
+            WHERE Id = @jobId;
+            """;
+
+            command.Parameters.AddWithValue("@status", status);
+            command.Parameters.AddWithValue("@jobId", jobId);
+
         await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -95,6 +129,31 @@ public sealed class ImportJobsRepository
         command.Parameters.AddWithValue("@validRows", validRows);
         command.Parameters.AddWithValue("@invalidRows", invalidRows);
         command.Parameters.AddWithValue("@jobId", jobId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task UpdateCountersAsync(SqliteConnection connection,
+                                          SqliteTransaction transaction,
+                                          long jobId, int totalRows, int validRows, int invalidRows,
+                                          CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+
+        command.CommandText = """
+            UPDATE ImportJobs
+            SET
+                TotalRows = @totalRows,
+                ValidRows = @validRows,
+                InvalidRows = @invalidRows
+            WHERE Id = @jobID;
+            """;
+
+        command.Parameters.AddWithValue("@totalRows", totalRows);
+        command.Parameters.AddWithValue("@validRows", validRows);
+        command.Parameters.AddWithValue("@invalidRows", invalidRows);
+        command.Parameters.AddWithValue("@jobId", jobId);
+
         await command.ExecuteNonQueryAsync(ct);
     }
 
@@ -147,5 +206,27 @@ public sealed class ImportJobsRepository
         }
 
         return ids;
+    }
+
+    private static ImportJob? ReadImportJob(SqliteDataReader reader)
+    {
+        var statusToken = reader.GetString(reader.GetOrdinal("Status"));
+        var clearedAtOrdinal = reader.GetOrdinal("ClearedAt");
+
+        DateTimeOffset? clearedAt = null;
+
+        if (!reader.IsDBNull(clearedAtOrdinal))
+        {
+            var clearedAtText = reader.GetString(clearedAtOrdinal);
+            clearedAt = DateTimeOffset.Parse(clearedAtText, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+        }
+
+        return new ImportJob(
+            reader.GetInt64(reader.GetOrdinal("Id")),
+            ImportJobStatusDbTokens.FromToken(statusToken),
+            reader.GetInt32(reader.GetOrdinal("TotalRows")),
+            reader.GetInt32(reader.GetOrdinal("ValidRows")),
+            reader.GetInt32(reader.GetOrdinal("InvalidRows")),
+            clearedAt);
     }
 }

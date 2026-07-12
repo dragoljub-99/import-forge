@@ -1,4 +1,5 @@
 using ImportForge.Infrastructure.Db;
+using Microsoft.Data.Sqlite;
 
 namespace ImportForge.Infrastructure.Repositories;
 
@@ -71,6 +72,35 @@ public sealed class ImportRowErrorsRepository
         var items = new List<ImportRowErrorForRead>();
 
         while (await reader.ReadAsync(ct))
+        {
+            items.Add(
+                new ImportRowErrorForRead(
+                    reader.GetString(reader.GetOrdinal("Field")),
+                    reader.GetString(reader.GetOrdinal("Error"))));
+        }
+
+        return items;
+    }
+
+    public async Task<IReadOnlyList<ImportRowErrorForRead>> ListByRowIdAsync(SqliteConnection connection,
+                                                                             SqliteTransaction transaction,
+                                                                             long rowId,
+                                                                             CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Field, Error
+            FROM ImportRowErrors
+            WHERE RowId = @rowId
+            ORDER BY Id ASC;
+            """;
+
+        command.Parameters.AddWithValue("@rowId", rowId);
+
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        var items = new List<ImportRowErrorForRead>();
+
+        while(await reader.ReadAsync(ct))
         {
             items.Add(
                 new ImportRowErrorForRead(

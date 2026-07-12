@@ -1,5 +1,8 @@
 using System.Globalization;
+
 using ImportForge.Infrastructure.Db;
+
+using Microsoft.Data.Sqlite;
 
 namespace ImportForge.Infrastructure.Repositories;
 
@@ -53,20 +56,7 @@ public sealed class ImportRowsRepository
 
         while (await reader.ReadAsync(ct))
         {
-            var productIdOrdinal = reader.GetOrdinal("ProductId");
-            var productNameOrdinal = reader.GetOrdinal("ProductName");
-            var productRsdValueOrdinal = reader.GetOrdinal("ProductRsdValue");
-            var productQuantityOrdinal = reader.GetOrdinal("ProductQuantity");
-
-            rows.Add(
-                new ImportRowForValidation(
-                    reader.GetInt64(reader.GetOrdinal("Id")),
-                    reader.GetInt64(reader.GetOrdinal("JobId")),
-                    reader.GetInt32(reader.GetOrdinal("RowNumber")),
-                    reader.IsDBNull(productIdOrdinal) ? null : reader.GetString(productIdOrdinal),
-                    reader.IsDBNull(productNameOrdinal) ? null : reader.GetString(productNameOrdinal),
-                    reader.IsDBNull(productRsdValueOrdinal) ? null : reader.GetInt32(productRsdValueOrdinal),
-                    reader.IsDBNull(productQuantityOrdinal) ? null : reader.GetInt32(productQuantityOrdinal)));
+            rows.Add(ReadImportRowForValidation(reader));
         }
 
         return rows;
@@ -92,19 +82,33 @@ public sealed class ImportRowsRepository
             return null;
         }
 
-        var productIdOrdinal = reader.GetOrdinal("ProductId");
-        var productNameOrdinal = reader.GetOrdinal("ProductName");
-        var productRsdValueOrdinal = reader.GetOrdinal("ProductRsdValue");
-        var productQuantityOrdinal = reader.GetOrdinal("ProductQuantity");
+        return ReadImportRowForValidation(reader);
+    }
 
-        return new ImportRowForValidation(
-            reader.GetInt64(reader.GetOrdinal("Id")),
-            reader.GetInt64(reader.GetOrdinal("JobId")),
-            reader.GetInt32(reader.GetOrdinal("RowNumber")),
-            reader.IsDBNull(productIdOrdinal) ? null : reader.GetString(productIdOrdinal),
-            reader.IsDBNull(productNameOrdinal) ? null : reader.GetString(productNameOrdinal),
-            reader.IsDBNull(productRsdValueOrdinal) ? null : reader.GetInt32(productRsdValueOrdinal),
-            reader.IsDBNull(productQuantityOrdinal) ? null : reader.GetInt32(productQuantityOrdinal));
+    public async Task<ImportRowForValidation?> GetByJobIdAndRowNumberAsync(SqliteConnection connection,
+                                                                          SqliteTransaction transaction,
+                                                                          long jobId, int rowNumber,
+                                                                          CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Id, JobId, RowNumber, ProductId, ProductName, ProductRsdValue, ProductQuantity
+            FROM ImportRows
+            WHERE JobId = @jobId
+            AND RowNumber = @rowNumber
+            LIMIT 1
+            """;
+
+        command.Parameters.AddWithValue("@jobId", jobId);
+        command.Parameters.AddWithValue("@rowNumber", rowNumber);
+
+        await using var reader = await command.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+        {
+            return null;
+        }
+
+        return ReadImportRowForValidation(reader);
     }
 
     public async Task UpdateBusinessFieldsAsync(
@@ -134,6 +138,32 @@ public sealed class ImportRowsRepository
         await command.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task UpdateBusinessFieldAsync(SqliteConnection connection,
+                                               SqliteTransaction transaction,
+                                               long rowId, string? productId, string? productName,
+                                               int? productRsdValue, int? productQuantity, 
+                                               CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+             UPDATE ImportRows
+             SET 
+                ProductId = @productId,
+                ProductName = @productName,
+                ProductRsdValue = @productRsdValue,
+                ProductQuantity = @productQuantity
+            WHERE Id = @rowId
+            """;
+
+        command.Parameters.AddWithValue("@productId", (object?)productId ?? DBNull.Value);
+        command.Parameters.AddWithValue("@productName", (object?)productName ?? DBNull.Value);
+        command.Parameters.AddWithValue("@productRsdValue", (object?)productRsdValue ?? DBNull.Value);
+        command.Parameters.AddWithValue("@productQuantity", (object?)productQuantity ?? DBNull.Value);
+        command.Parameters.AddWithValue("@rowId", rowId);
+
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<IReadOnlyList<ImportRowForValidation>> ListValidatableByJobIdAsync(long jobId, CancellationToken ct)
     {
         await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
@@ -158,20 +188,7 @@ public sealed class ImportRowsRepository
 
         while (await reader.ReadAsync(ct))
         {
-            var productIdOrdinal = reader.GetOrdinal("ProductId");
-            var productNameOrdinal = reader.GetOrdinal("ProductName");
-            var productRsdValueOrdinal = reader.GetOrdinal("ProductRsdValue");
-            var productQuantityOrdinal = reader.GetOrdinal("ProductQuantity");
-
-            rows.Add(
-                new ImportRowForValidation(
-                    reader.GetInt64(reader.GetOrdinal("Id")),
-                    reader.GetInt64(reader.GetOrdinal("JobId")),
-                    reader.GetInt32(reader.GetOrdinal("RowNumber")),
-                    reader.IsDBNull(productIdOrdinal) ? null : reader.GetString(productIdOrdinal),
-                    reader.IsDBNull(productNameOrdinal) ? null : reader.GetString(productNameOrdinal),
-                    reader.IsDBNull(productRsdValueOrdinal) ? null : reader.GetInt32(productRsdValueOrdinal),
-                    reader.IsDBNull(productQuantityOrdinal) ? null : reader.GetInt32(productQuantityOrdinal)));
+            rows.Add(ReadImportRowForValidation(reader));
         }
 
         return rows;
@@ -235,6 +252,23 @@ public sealed class ImportRowsRepository
         return Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
     }
 
+    public async Task<int> CountByJobIdAsync(SqliteConnection connection,
+                                             SqliteTransaction transaction,
+                                             long jobId, CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(1)
+            FROM ImportRows
+            WHERE JobId = @jobId;
+            """;
+        
+        command.Parameters.AddWithValue("@jobId", jobId);
+        
+        var scalar = await command.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(scalar, CultureInfo.InvariantCulture);
+    }
+
     public async Task<int> DeleteByJobIdAsync(long jobId, CancellationToken ct)
     {
         await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
@@ -247,5 +281,23 @@ public sealed class ImportRowsRepository
         command.Parameters.AddWithValue("@jobId", jobId);
 
         return await command.ExecuteNonQueryAsync(ct);
+    }
+
+    private static ImportRowForValidation ReadImportRowForValidation(SqliteDataReader reader)
+    {
+        var productIdOrdinal = reader.GetOrdinal("ProductId");
+        var productNameOrdinal = reader.GetOrdinal("ProductName");
+        var productRsdValueOrdinal = reader.GetOrdinal("ProductRsdValue");
+        var productQuantityOrdinal = reader.GetOrdinal("ProductQuantity");
+
+        return new ImportRowForValidation(
+            reader.GetInt64(reader.GetOrdinal("Id")),
+            reader.GetInt64(reader.GetOrdinal("JobId")),
+            reader.GetInt32(reader.GetOrdinal("RowNumber")),
+            reader.IsDBNull(productIdOrdinal) ? null : reader.GetString(productIdOrdinal),
+            reader.IsDBNull(productNameOrdinal) ? null : reader.GetString(productNameOrdinal),
+            reader.IsDBNull(productRsdValueOrdinal) ? null : reader.GetInt32(productRsdValueOrdinal),
+            reader.IsDBNull(productQuantityOrdinal) ? null : reader.GetInt32(productQuantityOrdinal)
+        );
     }
 }
