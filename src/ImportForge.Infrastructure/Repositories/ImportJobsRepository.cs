@@ -107,7 +107,7 @@ public sealed class ImportJobsRepository
             WHERE Id = @jobId;
             """;
 
-            command.Parameters.AddWithValue("@status", status);
+            command.Parameters.AddWithValue("@status", ImportJobStatusDbTokens.ToToken(status));
             command.Parameters.AddWithValue("@jobId", jobId);
 
         await command.ExecuteNonQueryAsync(ct);
@@ -146,7 +146,7 @@ public sealed class ImportJobsRepository
                 TotalRows = @totalRows,
                 ValidRows = @validRows,
                 InvalidRows = @invalidRows
-            WHERE Id = @jobID;
+            WHERE Id = @jobId;
             """;
 
         command.Parameters.AddWithValue("@totalRows", totalRows);

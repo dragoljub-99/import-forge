@@ -147,6 +147,26 @@ public sealed class ImportRowErrorsRepository
         command.Parameters.AddWithValue("@unknownField", UnknownFieldName);
         await command.ExecuteNonQueryAsync(ct);
     }
+    public async Task DeleteFieldLevelByJobIdAsync(SqliteConnection connection, 
+                                                   SqliteTransaction transaction,
+                                                   long jobId, CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            DELETE FROM ImportRowErrors
+            WHERE RowId IN (
+                SELECT Id
+                FROM ImportRows
+                WHERE JobId = @jobId
+            )
+            AND Field <> @unknownField;
+            """;
+
+        command.Parameters.AddWithValue("@jobId", jobId);
+        command.Parameters.AddWithValue("@unknownField", UnknownFieldName);
+        await command.ExecuteNonQueryAsync(ct);
+    }
 
     public async Task<int> CountDistinctRowsWithErrorsByJobIdAsync(long jobId, CancellationToken ct)
     {
@@ -173,7 +193,7 @@ public sealed class ImportRowErrorsRepository
         command.Transaction = transaction;
         command.CommandText = """
            SELECT COUNT(DISTINCT e.RowId)
-           FROM ImportRowsErrors e
+           FROM ImportRowErrors e
            INNER JOIN ImportRows r ON r.Id = e.RowId
            WHERE r.JobId = @jobId;
            """;
