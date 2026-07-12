@@ -28,6 +28,24 @@ public sealed class ImportRowErrorsRepository
         await command.ExecuteNonQueryAsync(ct);
     }
 
+    public async Task AddAsync(SqliteConnection connection,
+                               SqliteTransaction transaction,
+                               long rowId, string field, string error,
+                               CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+             INSERT OR IGNORE INTO ImportRowErrors (RowId, Field, Error)
+             VALUES (@rowId, @field, @error)
+             """;
+        command.Parameters.AddWithValue("@rowId", rowId);
+        command.Parameters.AddWithValue("@field", field);
+        command.Parameters.AddWithValue("@error", error);
+
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
     public async Task<IReadOnlyList<ImportJobErrorItem>> ListByJobIdAsync(long jobId, CancellationToken ct)
     {
         await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
@@ -88,6 +106,7 @@ public sealed class ImportRowErrorsRepository
                                                                              CancellationToken ct)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT Field, Error
             FROM ImportRowErrors
@@ -145,6 +164,26 @@ public sealed class ImportRowErrorsRepository
         return Convert.ToInt32(scalar);
     }
 
+    public async Task<int> CountDistinctRowsWithErrorsByJobIdAsync(SqliteConnection connection,
+                                                                   SqliteTransaction transaction,
+                                                                   long jobId,
+                                                                   CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+           SELECT COUNT(DISTINCT e.RowId)
+           FROM ImportRowsErrors e
+           INNER JOIN ImportRows r ON r.Id = e.RowId
+           WHERE r.JobId = @jobId;
+           """;
+        command.Parameters.AddWithValue("@jobId", jobId);
+
+        var scalar = await command.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(scalar);
+
+    }
+
     public async Task DeleteByRowIdAsync(long rowId, CancellationToken ct)
     {
         await using var connection = await _connectionFactory.OpenConnectionAsync(ct);
@@ -154,6 +193,23 @@ public sealed class ImportRowErrorsRepository
             WHERE RowId = @rowId;
             """;
         command.Parameters.AddWithValue("@rowId", rowId);
+        await command.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task DeleteByRowIdAsync(SqliteConnection connection,
+                                         SqliteTransaction transaction,
+                                         long rowId,
+                                         CancellationToken ct)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            DELETE FROM ImportRowErrors
+            WHERE RowId = @rowId;
+            """;
+
+        command.Parameters.AddWithValue("@rowId", rowId);
+
         await command.ExecuteNonQueryAsync(ct);
     }
 }

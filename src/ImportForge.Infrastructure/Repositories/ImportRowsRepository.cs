@@ -91,6 +91,7 @@ public sealed class ImportRowsRepository
                                                                           CancellationToken ct)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT Id, JobId, RowNumber, ProductId, ProductName, ProductRsdValue, ProductQuantity
             FROM ImportRows
@@ -138,13 +139,14 @@ public sealed class ImportRowsRepository
         await command.ExecuteNonQueryAsync(ct);
     }
 
-    public async Task UpdateBusinessFieldAsync(SqliteConnection connection,
+    public async Task UpdateBusinessFieldsAsync(SqliteConnection connection,
                                                SqliteTransaction transaction,
                                                long rowId, string? productId, string? productName,
                                                int? productRsdValue, int? productQuantity, 
                                                CancellationToken ct)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
              UPDATE ImportRows
              SET 
@@ -257,6 +259,7 @@ public sealed class ImportRowsRepository
                                              long jobId, CancellationToken ct)
     {
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             SELECT COUNT(1)
             FROM ImportRows
